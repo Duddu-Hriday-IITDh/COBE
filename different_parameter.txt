@@ -1,0 +1,65 @@
+1. Learning Rate: --Manikanta
+python try.py --model_type bert --learning_rate 5e-5 --train_batch_size 32 --num_train_epochs 3
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3
+python try.py --model_type bert --learning_rate 1e-5 --train_batch_size 32 --num_train_epochs 3
+
+2. Batch Size: --Hriday
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 16 --num_train_epochs 3
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 64 --num_train_epochs 3
+
+3. Number of Epochs: --Suresh
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 5
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 10
+
+4. Maximum Sequence Length: --Hriday
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --max_seq_length 128
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --max_seq_length 256
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --max_seq_length 512
+
+5. Optimizer Type: --Suresh
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --optimizer adam
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --optimizer adafactor
+
+6. Weight Decay:
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --weight_decay 0.01
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --weight_decay 0.001
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --weight_decay 0.0001
+
+7. Warmup Steps:
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --warmup_steps 0
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --warmup_steps 100
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --warmup_steps 1000
+
+8. Scheduler Type:
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --scheduler linear
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --scheduler constant
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --scheduler inv_sqrt
+
+9. Gradient Accumulation Steps: 
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --gradient_accumulation_steps 1
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --gradient_accumulation_steps 4
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --gradient_accumulation_steps 8
+
+10. Random Seed:
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --seed 42
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --seed 123
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --seed 999
+
+11. Precision (FP16):
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --fp16
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --no_fp16
+
+12. Domain-Specific Training and Testing: --Manikanta
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --train_domains books --test_domains electronics
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --train_domains music --test_domains music
+
+13. KNN Neighbors (if applicable):
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --knn_num 5
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --knn_num 10
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --knn_num 20
+
+14. CUDA/CPU Mode:
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3 --no_cuda
+python try.py --model_type bert --learning_rate 3e-5 --train_batch_size 32 --num_train_epochs 3  # Use GPU (default)

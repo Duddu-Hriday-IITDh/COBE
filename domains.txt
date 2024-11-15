@@ -1,0 +1,16 @@
+apparel
+baby
+books
+camera_photo
+dvd
+electronics
+health
+imdb
+kitchen_housewares
+magazines
+MR
+music
+software
+sports_outdoors
+toys_games
+video

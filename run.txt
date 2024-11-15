@@ -1,0 +1,47 @@
+python try.py --output_dir model_output --data_dir data/fdu-mtl/ --model_type COBE --train_domains music --test_domains books --model_name_or_path bert-base-uncased --do_train --do_test --train_batch_size 128 --learning_rate 5e-5 --num_train_epochs 5
+
+
+
+First successful run:
+
+[sreek@iitdhmaster COBE]$ python try.py --output_dir model_output --data_dir data/fdu-mtl/ --model_type COBE --train_domains music --test_domains books --model_name_or_path bert-base-uncased --do_train --do_test --train_batch_size 128 --learning_rate 5e-5 --num_train_epochs 5
+2024-10-17 23:31:23.909896: W tensorflow/stream_executor/platform/default/dso_loader.cc:64] Could not load dynamic library 'libcudart.so.11.0'; dlerror: libcudart.so.11.0: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /apps/parallel_studio_xe_2020_update2_cluster_edition/itac/2020.2.031/intel64/slib:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/mpi/intel64/libfabric/lib:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/mpi/intel64/lib/release:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/mpi/intel64/lib:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/ipp/lib/intel64:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/mkl/lib/intel64_lin:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/tbb/lib/intel64/gcc4.8:/apps/parallel_studio_xe_2020_update2_cluster_edition/debugger_2020/python/intel64/lib:/apps/parallel_studio_xe_2020_update2_cluster_edition/debugger_2020/libipt/intel64/lib:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/daal/lib/intel64_lin:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/daal/../tbb/lib/intel64_lin/gcc4.4:/apps/parallel_studio_xe_2020_update2_cluster_edition/compilers_and_libraries_2020.2.254/linux/daal/../tbb/lib/intel64_lin/gcc4.8:/apps/FDS/bin/INTEL/lib:/usr/lib64
+2024-10-17 23:31:23.909950: I tensorflow/stream_executor/cuda/cudart_stub.cc:29] Ignore above cudart dlerror if you do not have a GPU set up on your machine.
+GPU number is : ~~~~~~~~~~~~~~~~  1
+Some weights of the model checkpoint at bert-base-uncased were not used when initializing BertCon: ['cls.seq_relationship.weight', 'cls.predictions.transform.LayerNorm.bias', 'cls.predictions.bias', 'cls.predictions.transform.dense.weight', 'cls.predictions.transform.dense.bias', 'cls.seq_relationship.bias', 'cls.predictions.transform.LayerNorm.weight']
+- This IS expected if you are initializing BertCon from the checkpoint of a model trained on another task or with another architecture (e.g. initializing a BertForSequenceClassification model from a BertForPreTraining model).
+- This IS NOT expected if you are initializing BertCon from the checkpoint of a model that you expect to be exactly identical (initializing a BertForSequenceClassification model from a BertForSequenceClassification model).
+Some weights of BertCon were not initialized from the model checkpoint at bert-base-uncased and are newly initialized: ['shared_encoder.2.bias', 'dom_cls.bias', 'shared_encoder.2.weight', 'shared_encoder.0.bias', 'shared_encoder.0.weight', 'dom_cls.weight', 'bert.embeddings.position_ids']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+cached_features_file: data/fdu-mtl/cached_train_bert-base-uncased_256_music_[0]
+/home/sreek/.local/lib/python3.7/site-packages/transformers/optimization.py:415: FutureWarning: This implementation of AdamW is deprecated and will be removed in a future version. Use the PyTorch implementation torch.optim.AdamW instead, or set `no_deprecation_warning=True` to disable this warning
+  FutureWarning,
+10/17/2024 23:31:27 - INFO - __main__ -   ***** Running training *****
+10/17/2024 23:31:27 - INFO - __main__ -     Num examples = 1400
+10/17/2024 23:31:27 - INFO - __main__ -     Num Epochs = 5
+10/17/2024 23:31:27 - INFO - __main__ -     Total train batch size (w. parallel, distributed & accumulation) = 128
+10/17/2024 23:31:27 - INFO - __main__ -     Gradient Accumulation steps = 1
+10/17/2024 23:31:27 - INFO - __main__ -     Total optimization steps = 55
+Iteration:   0%|                                                                                                                                                                           | 0/11 [00:00<?, ?it/s]/apps/parallel_studio_xe_2020_update2_cluster_edition/intelpython3/lib/python3.7/site-packages/torch/optim/lr_scheduler.py:247: UserWarning: To get the last learning rate computed by the scheduler, please use `get_last_lr()`.
+  warnings.warn("To get the last learning rate computed by the scheduler, "
+10/17/2024 23:32:09 - INFO - __main__ -   epoch: 0, step: 1, loss: 0.0138, lr: 4.90909e-05
+Iteration: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [07:28<00:00, 40.81s/it]
+Iteration: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [07:25<00:00, 40.50s/it]
+Iteration: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [07:26<00:00, 40.56s/it]
+Iteration: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [07:26<00:00, 40.63s/it]
+Iteration:  45%|██████████████████████████████████████████████████████████████████████████                                                                                         | 5/11 [03:24<04:04, 40.81s/it]10/18/2024 00:05:19 - INFO - __main__ -   epoch: 4, step: 50, loss: 0.1546, lr: 4.54545e-06
+Iteration: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 11/11 [07:27<00:00, 40.67s/it]
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+batch = 4
+half = [0]
+10/18/2024 00:11:10 - INFO - glue_utils -   Writing example 0 of 400
+books 0.885
