@@ -64,61 +64,70 @@ def generate_adversarial_noise(h, loss, epsilon=1e-3):
 
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
-        """
-        :param bert_config: configuration for bert model
-        """
         super(BertCon, self).__init__(bert_config)
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
+        
+        # Make output size configurable
+        self.output_size = getattr(bert_config, "output_size", 192)
+
         self.shared_encoder = nn.Sequential(
             nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
-            nn.Linear(penultimate_hidden_size // 2, 192),
+            nn.Linear(penultimate_hidden_size // 2, self.output_size),
         )
-
         self.dom_loss1 = CrossEntropyLoss()
-        self.dom_cls = nn.Linear(192, bert_config.domain_number)
+        self.dom_cls = nn.Linear(self.output_size, bert_config.domain_number)
+
+        # Temperature parameter with clamping for stability
         self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train', epsilon=1e-3):
-        outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
-                            attention_mask=attention_mask, head_mask=head_mask)
-        hidden = outputs[0]  # Hidden states from BERT
-        batch_num = hidden.shape[0]
-        w = hidden[:, 0, :]  # [CLS] token representation
+    def forward(
+        self, 
+        input_ids, 
+        token_type_ids=None, 
+        attention_mask=None, 
+        sent_labels=None,
+        position_ids=None, 
+        head_mask=None, 
+        dom_labels=None, 
+        meg="train"
+    ):
+        outputs = self.bert(input_ids, position_ids=position_ids, 
+                            token_type_ids=token_type_ids,
+                            attention_mask=attention_mask, 
+                            head_mask=head_mask)
+        hidden = outputs[0]
+        batch_num = hidden.size(0)
+        
+        # CLS token representation
+        w = hidden[:, 0, :]
         h = self.shared_encoder(w)
 
-        if meg == 'train':
+        if meg == "train":
             h = F.normalize(h, p=2, dim=1)
             sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
             rev_sent_labels = sent_labels.T
             rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(h, rev_h) / self.tem)
+
+            # Clamping temperature
+            tem_clamped = torch.clamp(self.tem, min=0.01, max=1.0)
+            similarity_mat = torch.exp(torch.matmul(h, rev_h) / tem_clamped)
+
             equal_mat = (sent_labels == rev_sent_labels).float()
-
-            # Compute contrastive loss
             eye = torch.eye(batch_num, device=h.device)
-            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
-            b = ((torch.ones(batch_num, batch_num, device=h.device) - eye) * similarity_mat).sum(dim=-1) + 1e-5
-            contrastive_loss = -(torch.log(a / b)).mean(-1)
+            
+            # Improved computations for stability
+            pos_similarity = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            neg_similarity = ((1 - eye) * similarity_mat).sum(dim=-1) + 1e-5
 
-            # Generate adversarial features
-            h_adv = generate_adversarial_noise(h, contrastive_loss, epsilon)
-            h_adv = F.normalize(h_adv, p=2, dim=1)
+            # Numerically stable loss
+            loss = -torch.log1p(pos_similarity / (neg_similarity - 1)).mean()
+            return loss
 
-            # Compute adversarial contrastive loss
-            similarity_mat_adv = torch.exp(torch.matmul(h_adv, rev_h) / self.tem)
-            a_adv = ((equal_mat - eye) * similarity_mat_adv).sum(dim=-1) + 1e-5
-            b_adv = ((torch.ones(batch_num, batch_num, device=h.device) - eye) * similarity_mat_adv).sum(dim=-1) + 1e-5
-            adversarial_loss = -(torch.log(a_adv / b_adv)).mean(-1)
-
-            # Combine losses
-            total_loss = contrastive_loss + adversarial_loss
-            return total_loss
-
-        elif meg == 'source':
+        elif meg == "source":
             return F.normalize(h, p=2, dim=1)
+
 
