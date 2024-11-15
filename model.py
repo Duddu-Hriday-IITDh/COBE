@@ -82,7 +82,7 @@ class BertCon(BertPreTrainedModel):
         self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+                position_ids=None, head_mask=None, meg='train'):
         
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
@@ -93,14 +93,15 @@ class BertCon(BertPreTrainedModel):
         if meg == 'train':
             h_norm = F.normalize(h, p=2, dim=1)
 
-            # Adversarial domain classification
+            # Adversarial domain classification (without dom_labels)
             h_adv = grad_reverse(h_norm)  # Apply gradient reversal for adversarial training
-            dom_pred = self.dom_cls(h_adv)
-            adv_loss = self.dom_loss1(dom_pred, dom_labels)
-
+            dom_pred = self.dom_cls(h_adv)  # Predict domain (without actual domain labels)
+            
             # Sentiment classification
             sent_loss = CrossEntropyLoss()(self.dom_cls(h_norm), sent_labels)
-            total_loss = sent_loss + adv_loss
+
+            # Total loss (Sentiment loss + Adversarial domain loss)
+            total_loss = sent_loss + self.dom_loss1(dom_pred, sent_labels)  # Use sent_labels as a proxy for domain in adversarial loss
             return total_loss
 
         elif meg == 'source':
