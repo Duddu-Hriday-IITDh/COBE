@@ -82,7 +82,7 @@ class BertCon(BertPreTrainedModel):
         self.dom_cls = nn.Linear(self.output_size, bert_config.domain_number)
 
         # Temperature parameter with clamping for stability
-        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
+        self.tem = nn.Parameter(torch.tensor(0.01, requires_grad=True))
 
     def forward(
         self, 
