@@ -104,7 +104,7 @@ class BertCon(BertPreTrainedModel):
                 
                 # Domain classification loss (if needed)
                 dom_preds = self.dom_cls(rnn_out)
-                dom_loss = self.dom_loss1(dom_preds, dom_labels)
+                dom_loss = self.dom_loss1(dom_preds)
                 
                 # Total loss
                 total_loss = sent_loss + dom_loss
