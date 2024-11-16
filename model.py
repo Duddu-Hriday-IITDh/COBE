@@ -47,6 +47,19 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
+class GradientReversal(Function):
+    @staticmethod
+    def forward(ctx, input, lambda_):
+        ctx.lambda_ = lambda_
+        return input.clone()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        lambda_ = ctx.lambda_
+        grad_input = grad_output.neg() * lambda_
+        return grad_input, None
+
+
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
@@ -56,42 +69,53 @@ class BertCon(BertPreTrainedModel):
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
-        self.shared_encoder = nn.Sequential(
-                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(0.3),
-                        nn.Linear(penultimate_hidden_size // 2, 192),
-                    )
 
-        self.dom_loss1 = CrossEntropyLoss()
-        self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        # self.tem = bert_config.tem
-        # self.tem = torch.tensor(0.05)
-        self.tem = nn.Parameter(torch.tensor(0.1, requires_grad=True))
-        # self.tem.requires_grad = True
+        # Shared Encoder
+        self.shared_encoder = nn.Sequential(
+            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(penultimate_hidden_size // 2, 192),
+        )
+
+        # Domain Classifier
+        self.domain_classifier = nn.Sequential(
+            nn.Linear(192, 96),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(96, bert_config.domain_number),
+        )
+
+        self.sentiment_loss = CrossEntropyLoss()
+        self.domain_loss = CrossEntropyLoss()
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
+                position_ids=None, head_mask=None, dom_labels=None, meg='train', lambda_=0.1):
+        """
+        Forward pass for training/testing.
+        """
+        # BERT Encoding
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:,0,:]
-        h =  self.shared_encoder(w)
-        if meg=='train':
-            h =  F.normalize(h, p=2, dim=1)
-            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
-            rev_sent_labels = sent_labels.T
-            rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
-            equal_mat = (sent_labels==rev_sent_labels).float()
-            
-            eye = torch.eye(batch_num)
-            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
-            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
+        w = hidden[:, 0, :]  # CLS token representation
+        h = self.shared_encoder(w)
 
-            loss = -(torch.log(a/b)).mean(-1)
-            return loss
+        if meg == 'train':
+            # Sentiment Prediction
+            h = F.normalize(h, p=2, dim=1)
+            sentiment_loss = self.sentiment_loss(h, sent_labels)
+
+            # Domain Classification with Gradient Reversal
+            grl_h = GradientReversal.apply(h, lambda_)
+            domain_logits = self.domain_classifier(grl_h)
+            domain_loss = self.domain_loss(domain_logits, dom_labels)
+
+            # Total Loss
+            total_loss = sentiment_loss + domain_loss
+            return total_loss
 
         elif meg == 'source':
             return F.normalize(h, p=2, dim=1)
+
