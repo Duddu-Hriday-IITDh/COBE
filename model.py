@@ -47,45 +47,47 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class BertCon(BertPreTrainedModel):
+class BertCon(nn.Module):  # Inherit directly from nn.Module to simplify
     def __init__(self, bert_config):
         """
         :param bert_config: configuration for bert model
         """
-        super(BertCon, self).__init__(bert_config)
+        super(BertCon, self).__init__()
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
+        
+        # Define CNN layers
         penultimate_hidden_size = bert_config.hidden_size
-        self.shared_encoder = nn.Sequential(
-            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(penultimate_hidden_size // 2, 192),
-        )
-
-        # Define the RNN (e.g., GRU or LSTM)
-        self.rnn = nn.GRU(input_size=192, hidden_size=128, batch_first=True)
-        self.output_layer = nn.Linear(128, bert_config.num_labels)  # For sentiment classification
-        self.loss_fn = CrossEntropyLoss()
+        self.conv1 = nn.Conv1d(in_channels=penultimate_hidden_size, out_channels=256, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv1d(in_channels=256, out_channels=128, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(128, 64)
+        self.fc2 = nn.Linear(64, bert_config.domain_number)
+        
+        self.dom_loss1 = CrossEntropyLoss()
+        self.tem = torch.tensor(0.05)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, meg='train'):
+                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+        # Get BERT embeddings
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
-        w = hidden[:, 0, :]  # [CLS] token representation
-        h = self.shared_encoder(w)
-        h = h.unsqueeze(1)  # Add a time dimension for RNN
+        batch_num = hidden.shape[0]
 
-        # Pass through RNN
-        rnn_out, _ = self.rnn(h)
-        rnn_out = rnn_out[:, -1, :]  # Take the last output of the RNN
+        # Apply CNN over BERT hidden states
+        cnn_input = hidden.transpose(1, 2)  # Shape: [batch_num, hidden_size, seq_len]
+        x = F.relu(self.conv1(cnn_input))
+        x = F.relu(self.conv2(x))
+        x = x.mean(dim=-1)  # Global Average Pooling
+        x = F.relu(self.fc1(x))
+        
+        # Domain classification output
+        domain_logits = self.fc2(x)
 
-        # Final output layer for classification
-        logits = self.output_layer(rnn_out)
-
-        if meg == 'train' and sent_labels is not None:
-            loss = self.loss_fn(logits, sent_labels)
+        if meg == 'train':
+            # Calculate domain classification loss
+            loss = self.dom_loss1(domain_logits, dom_labels)
             return loss
-        else:
-            return logits
-
+        elif meg == 'source':
+            # Return features for the source domain
+            return x
