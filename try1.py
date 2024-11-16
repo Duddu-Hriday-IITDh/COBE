@@ -209,8 +209,8 @@ def train(args, train_dataset,tokenizer,domain_schema, model):
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            print("batch = "+str(batch))
-            print("batch size = "+str(len(batch)))
+            # print("batch = "+str(batch))
+            # print("batch size = "+str(len(batch)))
             loss = torch.tensor(0, dtype=float).to(args.device)
 
             inputs = {'input_ids': batch[0],
