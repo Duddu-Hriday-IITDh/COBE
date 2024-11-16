@@ -47,6 +47,18 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
+class GradientReversal(Function):
+    """
+    Gradient reversal layer for adversarial training.
+    """
+    @staticmethod
+    def forward(ctx, x):
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return -grad_output
+
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
@@ -59,38 +71,37 @@ class BertCon(BertPreTrainedModel):
         self.shared_encoder = nn.Sequential(
             nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
             nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
             nn.Linear(penultimate_hidden_size // 2, 192),
         )
 
-        self.dom_loss1 = CrossEntropyLoss()
-        self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
+        # Define adversarial discriminator
+        self.domain_discriminator = nn.Linear(192, 1)
+        self.adv_loss = nn.BCEWithLogitsLoss()  # Use binary cross-entropy for domain discrimination
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+                position_ids=None, head_mask=None, meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
-        batch_num = hidden.shape[0]
         w = hidden[:, 0, :]
         h = self.shared_encoder(w)
-        
+
         if meg == 'train':
-            # Meta-learning adaptation
+            # Normalize features
             h = F.normalize(h, p=2, dim=1)
 
-            # Inner-loop optimization for domain classification
-            adapted_params = self.dom_cls.weight.clone().detach().requires_grad_(True)
-            task_loss = self.dom_loss1(F.linear(h, adapted_params), dom_labels)
+            # Adversarial domain classification loss
+            reversed_features = GradientReversal.apply(h)
+            domain_logits = self.domain_discriminator(reversed_features)
+            domain_labels = torch.zeros_like(domain_logits)  # Assuming all belong to the source domain
+            adv_loss = self.adv_loss(domain_logits, domain_labels)
 
-            # Update parameters for the task
-            task_grads = torch.autograd.grad(task_loss, adapted_params, retain_graph=True)
-            adapted_params = adapted_params - 0.01 * task_grads[0]  # Example inner-loop update
+            # Sentiment classification loss
+            sentiment_logits = torch.matmul(h, h.T)
+            sentiment_loss = F.cross_entropy(sentiment_logits, sent_labels)
 
-            # Compute outer-loop loss
-            meta_loss = self.dom_loss1(F.linear(h, adapted_params.detach()), dom_labels)
-            return meta_loss
+            total_loss = sentiment_loss + adv_loss
+            return total_loss
 
         elif meg == 'source':
             return F.normalize(h, p=2, dim=1)
