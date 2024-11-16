@@ -115,8 +115,8 @@ class BertCon(BertPreTrainedModel):
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
         self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))  # Temperature for similarity (used in meta-learning)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, task_labels=None, 
-                position_ids=None, head_mask=None, meg='train', num_adaptation_steps=1, fast_adaptation=False):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
+                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
         # Get BERT embeddings
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
