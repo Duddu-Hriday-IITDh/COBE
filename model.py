@@ -67,7 +67,7 @@ class BertCon(BertPreTrainedModel):
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
         # self.tem = bert_config.tem
         # self.tem = torch.tensor(0.05)
-        self.tem = nn.Parameter(torch.tensor(0.01, requires_grad=True))
+        self.tem = nn.Parameter(torch.tensor(0.1, requires_grad=True))
         # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
