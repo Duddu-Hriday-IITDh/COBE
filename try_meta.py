@@ -176,7 +176,7 @@ def train(args, train_dataset, tokenizer, domain_schema, model):
 
     model.zero_grad()
     set_seed(args)  # For reproducibility (even between python 2 and 3)
-
+    tr_loss, logging_loss = 0.0, 0.0
     model.to(args.device)
     for epoch in range(int(args.num_train_epochs)):
         epoch_iterator = tqdm(train_dataloader, desc="Iteration")
