@@ -59,46 +59,39 @@ class BertCon(BertPreTrainedModel):
         self.shared_encoder = nn.Sequential(
                         nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
                         nn.ReLU(inplace=True),
+                        nn.Dropout(0.3),
                         nn.Linear(penultimate_hidden_size // 2, 192),
                     )
-        
-        # RNN layer to replace contrastive learning
-        self.rnn = nn.LSTM(192, 128, batch_first=True, bidirectional=True)
-        self.rnn_fc = nn.Linear(128 * 2, 192)  # Bidirectional, so we concatenate hidden states
 
         self.dom_loss1 = CrossEntropyLoss()
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        self.tem = torch.tensor(0.05)
+        # self.tem = bert_config.tem
+        # self.tem = torch.tensor(0.05)
+        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
+        # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:, 0, :]
-        h = self.shared_encoder(w)
-
-        # Add RNN processing instead of contrastive loss
-        rnn_out, (hn, cn) = self.rnn(h.unsqueeze(1))  # Add an extra dimension for batch_first
-        rnn_out = rnn_out[:, -1, :]  # Get the last hidden state from the sequence
-        rnn_out = self.rnn_fc(rnn_out)  # Pass through the fully connected layer
-
-        if meg == 'train':
-            h = F.normalize(rnn_out, p=2, dim=1)
-            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
+        w = hidden[:,0,:]
+        h =  self.shared_encoder(w)
+        if meg=='train':
+            h =  F.normalize(h, p=2, dim=1)
+            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
             rev_sent_labels = sent_labels.T
             rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(h, rev_h) / self.tem)
-            equal_mat = (sent_labels == rev_sent_labels).float()
-
+            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
+            equal_mat = (sent_labels==rev_sent_labels).float()
+            
             eye = torch.eye(batch_num)
-            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
-            b = ((torch.ones(batch_num, batch_num) - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
+            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
 
-            loss = -(torch.log(a / b)).mean(-1)
+            loss = -(torch.log(a/b)).mean(-1)
             return loss
 
         elif meg == 'source':
-            return F.normalize(rnn_out, p=2, dim=1)
-
+            return F.normalize(h, p=2, dim=1)

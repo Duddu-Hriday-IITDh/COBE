@@ -47,18 +47,6 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class GradientReversal(Function):
-    """
-    Gradient reversal layer for adversarial training.
-    """
-    @staticmethod
-    def forward(ctx, x):
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return -grad_output
-
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
@@ -69,39 +57,48 @@ class BertCon(BertPreTrainedModel):
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
         self.shared_encoder = nn.Sequential(
-            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-            nn.ReLU(inplace=True),
-            nn.Linear(penultimate_hidden_size // 2, 192),
-        )
+                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(penultimate_hidden_size // 2, 192),
+                    )
 
-        # Define adversarial discriminator
-        self.domain_discriminator = nn.Linear(192, 1)
-        self.adv_loss = nn.BCEWithLogitsLoss()  # Use binary cross-entropy for domain discrimination
+        self.dom_loss1 = CrossEntropyLoss()
+        self.dom_cls = nn.Linear(192, bert_config.domain_number)
+        self.tem = torch.tensor(0.05)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, meg='train'):
+                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+        # Forward pass through BERT model
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
-        w = hidden[:, 0, :]
+        batch_num = hidden.shape[0]
+        w = hidden[:,0,:]  # Use the [CLS] token representation
         h = self.shared_encoder(w)
 
         if meg == 'train':
-            # Normalize features
+            # Generate adversarial perturbations (sign-based)
+            perturbation = torch.sign(torch.randn_like(h))  # Random perturbation
+            adv_h = h + perturbation * 0.1  # Perturb the hidden states
+            
+            # Normalize the hidden states
             h = F.normalize(h, p=2, dim=1)
+            adv_h = F.normalize(adv_h, p=2, dim=1)
 
-            # Adversarial domain classification loss
-            reversed_features = GradientReversal.apply(h)
-            domain_logits = self.domain_discriminator(reversed_features)
-            domain_labels = torch.zeros_like(domain_logits)  # Assuming all belong to the source domain
-            adv_loss = self.adv_loss(domain_logits, domain_labels)
+            # Adversarial loss (cross-entropy loss with perturbations)
+            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
+            rev_sent_labels = sent_labels.T
+            rev_h = h.T
+            similarity_mat = torch.exp(torch.matmul(adv_h, rev_h) / self.tem)  # Use adversarial hidden states
 
-            # Sentiment classification loss
-            sentiment_logits = torch.matmul(h, h.T)
-            sentiment_loss = F.cross_entropy(sentiment_logits, sent_labels)
+            equal_mat = (sent_labels == rev_sent_labels).float()
+            eye = torch.eye(batch_num)
+            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            b = ((torch.ones(batch_num, batch_num) - eye) * similarity_mat).sum(dim=-1) + 1e-5
 
-            total_loss = sentiment_loss + adv_loss
-            return total_loss
+            loss = -(torch.log(a / b)).mean(-1)
+            return loss
 
         elif meg == 'source':
+            # Return normalized hidden states
             return F.normalize(h, p=2, dim=1)
