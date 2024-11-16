@@ -103,12 +103,13 @@ class BertCon(BertPreTrainedModel):
                 sent_loss = CrossEntropyLoss()(sent_preds, sent_labels)
                 
                 # Domain classification loss (if needed)
-                dom_preds = self.dom_cls(rnn_out)
-                dom_loss = self.dom_loss1(dom_preds)
+                # dom_preds = self.dom_cls(rnn_out)
+                # dom_loss = self.dom_loss1(dom_preds, dom_labels)
                 
-                # Total loss
-                total_loss = sent_loss + dom_loss
-                return total_loss
+                # # Total loss
+                # total_loss = sent_loss + dom_loss
+                # return total_loss
+                return sent_loss
             else:
                 return None  # If no labels are provided, return None (no training loss)
         
