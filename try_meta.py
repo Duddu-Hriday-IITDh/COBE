@@ -176,8 +176,14 @@ def train(args, train_dataset, tokenizer, domain_schema, model):
 
     model.zero_grad()
     set_seed(args)  # For reproducibility (even between python 2 and 3)
-    tr_loss, logging_loss = 0.0, 0.0
+
     model.to(args.device)
+
+    # Initialize the variables
+    tr_loss = 0.0
+    global_step = 0
+    logging_loss = 0.0
+
     for epoch in range(int(args.num_train_epochs)):
         epoch_iterator = tqdm(train_dataloader, desc="Iteration")
         for step, batch in enumerate(epoch_iterator):
@@ -245,6 +251,7 @@ def train(args, train_dataset, tokenizer, domain_schema, model):
     tb_writer.close()
     return trained_features
 
+    
 # def train(args, train_dataset,tokenizer,domain_schema, model):
 #     """ Train the model """
     
