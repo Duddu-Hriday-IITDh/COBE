@@ -47,52 +47,49 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class BertCon(nn.Module):  # Changed from BertPreTrainedModel to nn.Module
+class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
         :param bert_config: configuration for bert model
         """
-        super(BertCon, self).__init__()
+        super(BertCon, self).__init__(bert_config)
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
-        
-        # CNN layers for feature extraction
-        self.cnn1 = nn.Conv1d(bert_config.hidden_size, 256, kernel_size=3, stride=1, padding=1)
-        self.cnn2 = nn.Conv1d(256, 128, kernel_size=3, stride=1, padding=1)
-        self.cnn3 = nn.Conv1d(128, 64, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool1d(kernel_size=2, stride=2, padding=0)
-        
-        self.fc = nn.Linear(64, 192)  # Final fully connected layer after CNN
+        penultimate_hidden_size = bert_config.hidden_size
+        self.shared_encoder = nn.Sequential(
+                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(penultimate_hidden_size // 2, 192),
+                    )
 
-        # Temperature scaling parameter (not used in contrastive loss now)
+        self.dom_loss1 = CrossEntropyLoss()
+        self.dom_cls = nn.Linear(192, bert_config.domain_number)
+        # self.tem = bert_config.tem
         self.tem = torch.tensor(0.05)
+        # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, meg='train'):
-        
-        # Forward pass through BERT model
+                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
-        hidden = outputs[0]  # Get the hidden states from BERT
-        
-        # Apply CNN on BERT's output
-        x = hidden.permute(0, 2, 1)  # Change shape for CNN [batch_size, hidden_size, seq_len]
-        x = F.relu(self.cnn1(x))
-        x = self.pool(x)
-        x = F.relu(self.cnn2(x))
-        x = self.pool(x)
-        x = F.relu(self.cnn3(x))
-        x = self.pool(x)
-        
-        # Flatten the CNN output and pass through fully connected layer
-        x = x.flatten(1)  # Flatten all dimensions except batch
-        x = self.fc(x)
-        
-        if meg == 'train':
-            # If training, calculate loss (no contrastive learning anymore)
-            loss = 0  # You can add your custom loss here if needed
+        hidden = outputs[0]
+        batch_num = hidden.shape[0]
+        w = hidden[:,0,:]
+        h =  self.shared_encoder(w)
+        if meg=='train':
+            h =  F.normalize(h, p=2, dim=1)
+            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
+            rev_sent_labels = sent_labels.T
+            rev_h = h.T
+            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
+            equal_mat = (sent_labels==rev_sent_labels).float()
+            
+            eye = torch.eye(batch_num)
+            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
+            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
+
+            loss = -(torch.log(a/b)).mean(-1)
             return loss
 
         elif meg == 'source':
-            # During inference or source domain prediction, return normalized CNN features
-            return F.normalize(x, p=2, dim=1)
+            return F.normalize(h, p=2, dim=1)

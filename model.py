@@ -47,7 +47,7 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class BertCon(BertPreTrainedModel):  # Use BertPreTrainedModel for compatibility with from_pretrained
+class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
         :param bert_config: configuration for bert model
@@ -55,39 +55,50 @@ class BertCon(BertPreTrainedModel):  # Use BertPreTrainedModel for compatibility
         super(BertCon, self).__init__(bert_config)
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
-        
-        # Define CNN layers
         penultimate_hidden_size = bert_config.hidden_size
-        self.conv1 = nn.Conv1d(in_channels=penultimate_hidden_size, out_channels=256, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=256, out_channels=128, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(128, 64)
-        self.fc2 = nn.Linear(64, bert_config.domain_number)
+        self.shared_encoder = nn.Sequential(
+                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+                        nn.ReLU(inplace=True),
+                        nn.Linear(penultimate_hidden_size // 2, 192),
+                    )
         
+        # RNN layer to replace contrastive learning
+        self.rnn = nn.LSTM(192, 128, batch_first=True, bidirectional=True)
+        self.rnn_fc = nn.Linear(128 * 2, 192)  # Bidirectional, so we concatenate hidden states
+
         self.dom_loss1 = CrossEntropyLoss()
+        self.dom_cls = nn.Linear(192, bert_config.domain_number)
         self.tem = torch.tensor(0.05)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
                 position_ids=None, head_mask=None, dom_labels=None, meg='train'):
-        # Get BERT embeddings
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
+        w = hidden[:, 0, :]
+        h = self.shared_encoder(w)
 
-        # Apply CNN over BERT hidden states
-        cnn_input = hidden.transpose(1, 2)  # Shape: [batch_num, hidden_size, seq_len]
-        x = F.relu(self.conv1(cnn_input))
-        x = F.relu(self.conv2(x))
-        x = x.mean(dim=-1)  # Global Average Pooling
-        x = F.relu(self.fc1(x))
-        
-        # Domain classification output
-        domain_logits = self.fc2(x)
+        # Add RNN processing instead of contrastive loss
+        rnn_out, (hn, cn) = self.rnn(h.unsqueeze(1))  # Add an extra dimension for batch_first
+        rnn_out = rnn_out[:, -1, :]  # Get the last hidden state from the sequence
+        rnn_out = self.rnn_fc(rnn_out)  # Pass through the fully connected layer
 
         if meg == 'train':
-            # Calculate domain classification loss
-            loss = self.dom_loss1(domain_logits, dom_labels)
+            h = F.normalize(rnn_out, p=2, dim=1)
+            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
+            rev_sent_labels = sent_labels.T
+            rev_h = h.T
+            similarity_mat = torch.exp(torch.matmul(h, rev_h) / self.tem)
+            equal_mat = (sent_labels == rev_sent_labels).float()
+
+            eye = torch.eye(batch_num)
+            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            b = ((torch.ones(batch_num, batch_num) - eye) * similarity_mat).sum(dim=-1) + 1e-5
+
+            loss = -(torch.log(a / b)).mean(-1)
             return loss
+
         elif meg == 'source':
-            # Return features for the source domain
-            return x
+            return F.normalize(rnn_out, p=2, dim=1)
+
