@@ -59,46 +59,39 @@ class BertCon(BertPreTrainedModel):
         self.shared_encoder = nn.Sequential(
                         nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
                         nn.ReLU(inplace=True),
+                        nn.Dropout(0.3),
                         nn.Linear(penultimate_hidden_size // 2, 192),
                     )
 
         self.dom_loss1 = CrossEntropyLoss()
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        self.tem = torch.tensor(0.05)
+        # self.tem = bert_config.tem
+        # self.tem = torch.tensor(0.05)
+        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
+        # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
-        # Forward pass through BERT model
+                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:,0,:]  # Use the [CLS] token representation
-        h = self.shared_encoder(w)
-
-        if meg == 'train':
-            # Generate adversarial perturbations (sign-based)
-            perturbation = torch.sign(torch.randn_like(h))  # Random perturbation
-            adv_h = h + perturbation * 0.1  # Perturb the hidden states
-            
-            # Normalize the hidden states
-            h = F.normalize(h, p=2, dim=1)
-            adv_h = F.normalize(adv_h, p=2, dim=1)
-
-            # Adversarial loss (cross-entropy loss with perturbations)
-            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
+        w = hidden[:,0,:]
+        h =  self.shared_encoder(w)
+        if meg=='train':
+            h =  F.normalize(h, p=2, dim=1)
+            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
             rev_sent_labels = sent_labels.T
             rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(adv_h, rev_h) / self.tem)  # Use adversarial hidden states
-
-            equal_mat = (sent_labels == rev_sent_labels).float()
+            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
+            equal_mat = (sent_labels==rev_sent_labels).float()
+            
             eye = torch.eye(batch_num)
-            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
-            b = ((torch.ones(batch_num, batch_num) - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
+            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
 
-            loss = -(torch.log(a / b)).mean(-1)
+            loss = -(torch.log(a/b)).mean(-1)
             return loss
 
         elif meg == 'source':
-            # Return normalized hidden states
             return F.normalize(h, p=2, dim=1)
