@@ -119,7 +119,7 @@ class BertCon(BertPreTrainedModel):
     #             position_ids=None, head_mask=None, meg='train', num_adaptation_steps=1, fast_adaptation=False):
         # Get BERT embeddings
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train',fast_adaptation=False,num_adaptation_steps=1):
+                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
@@ -133,13 +133,16 @@ class BertCon(BertPreTrainedModel):
         h = F.normalize(h, p=2, dim=1)
         
         if meg == 'train':
-            if fast_adaptation:
-                # During meta-training, simulate a quick adaptation to new tasks
-                loss = self.meta_loss(h, sent_labels, num_adaptation_steps)
-                return loss
-            else:
-                # During normal training, return the output embeddings (h)
-                return h
+            num_adaptation_steps = 1
+            loss = self.meta_loss(h, sent_labels, num_adaptation_steps)
+            return loss
+            # if fast_adaptation:
+            #     # During meta-training, simulate a quick adaptation to new tasks
+            #     loss = self.meta_loss(h, sent_labels, num_adaptation_steps)
+            #     return loss
+            # else:
+            #     # During normal training, return the output embeddings (h)
+            #     return h
 
         elif meg == 'source':
             return h  # Return the transformed hidden states for use in other tasks
