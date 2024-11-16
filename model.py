@@ -69,29 +69,56 @@ class BertCon(BertPreTrainedModel):
         # self.tem = torch.tensor(0.05)
         self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
         # self.tem.requires_grad = True
-
+    
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
+            position_ids=None, head_mask=None, dom_labels=None, meg='train', epsilon=1e-5):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
-        hidden = outputs[0]
+        hidden = outputs[0]  # Shape: (batch_size, seq_len, hidden_size)
         batch_num = hidden.shape[0]
-        w = hidden[:,0,:]
-        h =  self.shared_encoder(w)
-        if meg=='train':
-            h =  F.normalize(h, p=2, dim=1)
-            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
-            rev_sent_labels = sent_labels.T
-            rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
-            equal_mat = (sent_labels==rev_sent_labels).float()
-            
-            eye = torch.eye(batch_num)
-            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
-            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
-
-            loss = -(torch.log(a/b)).mean(-1)
+        w = hidden[:, 0, :]  # CLS token representation
+        h = self.shared_encoder(w)
+    
+        if meg == 'train':
+            # Normalize original embeddings
+            h = F.normalize(h, p=2, dim=1)
+    
+            # Step 1: Initialize random noise
+            noise = torch.randn_like(h).detach()
+            noise = Variable(noise, requires_grad=True)
+    
+            # Step 2: Compute perturbed embeddings
+            for _ in range(1):  # Single-step adversarial training
+                perturbed_h = h + epsilon * noise
+                perturbed_h = F.normalize(perturbed_h, p=2, dim=1)
+    
+                # Compute similarity with adversarial embeddings
+                sent_labels = sent_labels.unsqueeze(0).repeat(batch_num, 1).T
+                rev_sent_labels = sent_labels.T
+                similarity_mat = torch.matmul(perturbed_h, h.T)
+    
+                # Compute adversarial loss
+                equal_mat = (sent_labels == rev_sent_labels).float()
+                loss_adv = self.dom_loss1(similarity_mat, equal_mat.argmax(dim=-1))
+    
+                # Backpropagate adversarial gradients
+                grad = torch.autograd.grad(loss_adv, noise, retain_graph=True)[0]
+                noise = grad.detach()
+    
+            # Final perturbed embeddings
+            h_adv = h + epsilon * noise
+            h_adv = F.normalize(h_adv, p=2, dim=1)
+    
+            # Combine original and adversarial losses
+            similarity_mat = torch.matmul(h, h_adv.T)
+            eye = torch.eye(batch_num).to(h.device)
+            equal_mat = (sent_labels == rev_sent_labels).float()
+            a = ((equal_mat - eye) * similarity_mat).sum(dim=-1) + 1e-5
+            b = ((torch.ones(batch_num, batch_num) - eye).to(h.device) * similarity_mat).sum(dim=-1) + 1e-5
+    
+            loss = -(torch.log(a / b)).mean(-1) + loss_adv
             return loss
-
+    
         elif meg == 'source':
             return F.normalize(h, p=2, dim=1)
+
