@@ -104,55 +104,61 @@ class BertCon(BertPreTrainedModel):
         :param bert_config: configuration for bert model
         """
         super(BertCon, self).__init__(bert_config)
-        self.bert_config = bert_config
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
         self.shared_encoder = nn.Sequential(
-                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(0.3),
-                        nn.Linear(penultimate_hidden_size // 2, 192),
-                    )
-
-        self.dom_loss1 = CrossEntropyLoss()
+            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(penultimate_hidden_size // 2, 192),
+        )
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        # self.tem = bert_config.tem
-        # self.tem = torch.tensor(0.05)
-        self.tem = nn.Parameter(torch.tensor(0.1, requires_grad=True))
-        # self.tem.requires_grad = True
-    def meta_loss(self, h, dom_labels):
-        """
-        Meta-learning loss based on domain-specific labels
-        """
-        # Example meta-learning loss: Cross-domain classification loss
-        dom_preds = self.dom_cls(h)
-        loss = self.dom_loss1(dom_preds, dom_labels)
-        return loss
-    
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
+        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))  # Temperature for similarity (used in meta-learning)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, task_labels=None, 
+                position_ids=None, head_mask=None, meg='train', num_adaptation_steps=1, fast_adaptation=False):
+        # Get BERT embeddings
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:,0,:]
-        h =  self.shared_encoder(w)
-        if meg=='train':
-            h =  F.normalize(h, p=2, dim=1)
-            # sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
-            # rev_sent_labels = sent_labels.T
-            # rev_h = h.T
-            # similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
-            # equal_mat = (sent_labels==rev_sent_labels).float()
-            
-            # eye = torch.eye(batch_num)
-            # a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
-            # b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
-
-            # loss = -(torch.log(a/b)).mean(-1)
-            loss = self.meta_loss(h, dom_labels)
-
-            return loss
+        w = hidden[:, 0, :]
+        
+        # Shared Encoder to transform the embeddings
+        h = self.shared_encoder(w)
+        
+        # Normalize the output embeddings (optional depending on your task)
+        h = F.normalize(h, p=2, dim=1)
+        
+        if meg == 'train':
+            if fast_adaptation:
+                # During meta-training, simulate a quick adaptation to new tasks
+                loss = self.meta_loss(h, task_labels, num_adaptation_steps)
+                return loss
+            else:
+                # During normal training, return the output embeddings (h)
+                return h
 
         elif meg == 'source':
-            return F.normalize(h, p=2, dim=1)
+            return h  # Return the transformed hidden states for use in other tasks
+
+    def meta_loss(self, embeddings, task_labels, num_adaptation_steps):
+        """
+        Simulate the meta-learning loss with fast adaptation on a task using the given embeddings.
+
+        Args:
+            embeddings: Encoded representations after the shared encoder
+            task_labels: Ground truth labels for the task
+            num_adaptation_steps: Number of gradient steps for task adaptation
+
+        Returns:
+            Loss for meta-training
+        """
+        # Simulate gradient updates for a few steps (meta-learning)
+        task_loss = CrossEntropyLoss()(embeddings, task_labels)
+        for _ in range(num_adaptation_steps):
+            # Apply a dummy gradient step (this is where meta-learning adaptation would occur)
+            task_loss.backward()
+            # Here, you would normally perform an optimization step, but for the sake of the example, we don't.
+        
+        return task_loss  # Return the task loss (after meta-adaptation)
