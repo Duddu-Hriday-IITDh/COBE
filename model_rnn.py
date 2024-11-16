@@ -47,18 +47,6 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class GradientReversal(Function):
-    """
-    Gradient reversal layer for adversarial training.
-    """
-    @staticmethod
-    def forward(ctx, x):
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return -grad_output
-
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
@@ -74,34 +62,30 @@ class BertCon(BertPreTrainedModel):
             nn.Linear(penultimate_hidden_size // 2, 192),
         )
 
-        # Define adversarial discriminator
-        self.domain_discriminator = nn.Linear(192, 1)
-        self.adv_loss = nn.BCEWithLogitsLoss()  # Use binary cross-entropy for domain discrimination
+        # Define the RNN (e.g., GRU or LSTM)
+        self.rnn = nn.GRU(input_size=192, hidden_size=128, batch_first=True)
+        self.output_layer = nn.Linear(128, bert_config.num_labels)  # For sentiment classification
+        self.loss_fn = CrossEntropyLoss()
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
                 position_ids=None, head_mask=None, meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
-        w = hidden[:, 0, :]
+        w = hidden[:, 0, :]  # [CLS] token representation
         h = self.shared_encoder(w)
+        h = h.unsqueeze(1)  # Add a time dimension for RNN
 
-        if meg == 'train':
-            # Normalize features
-            h = F.normalize(h, p=2, dim=1)
+        # Pass through RNN
+        rnn_out, _ = self.rnn(h)
+        rnn_out = rnn_out[:, -1, :]  # Take the last output of the RNN
 
-            # Adversarial domain classification loss
-            reversed_features = GradientReversal.apply(h)
-            domain_logits = self.domain_discriminator(reversed_features)
-            domain_labels = torch.zeros_like(domain_logits)  # Assuming all belong to the source domain
-            adv_loss = self.adv_loss(domain_logits, domain_labels)
+        # Final output layer for classification
+        logits = self.output_layer(rnn_out)
 
-            # Sentiment classification loss
-            sentiment_logits = torch.matmul(h, h.T)
-            sentiment_loss = F.cross_entropy(sentiment_logits, sent_labels)
+        if meg == 'train' and sent_labels is not None:
+            loss = self.loss_fn(logits, sent_labels)
+            return loss
+        else:
+            return logits
 
-            total_loss = sentiment_loss + adv_loss
-            return total_loss
-
-        elif meg == 'source':
-            return F.normalize(h, p=2, dim=1)
