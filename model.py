@@ -47,14 +47,14 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
-class BertCon(nn.Module):  # Inherit directly from nn.Module to simplify
+class BertCon(nn.Module):
     def __init__(self, bert_config):
         """
         :param bert_config: configuration for bert model
         """
         super(BertCon, self).__init__()
         self.bert_config = bert_config
-        self.bert = BertModel(bert_config)
+        self.bert = BertModel.from_pretrained('bert-base-uncased', config=bert_config)  # Manually load BERT
         
         # Define CNN layers
         penultimate_hidden_size = bert_config.hidden_size
