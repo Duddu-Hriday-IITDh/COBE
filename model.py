@@ -57,41 +57,40 @@ class BertCon(BertPreTrainedModel):
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
         self.shared_encoder = nn.Sequential(
-                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(0.3),
-                        nn.Linear(penultimate_hidden_size // 2, 192),
-                    )
+            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(penultimate_hidden_size // 2, 192),
+        )
 
         self.dom_loss1 = CrossEntropyLoss()
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
-        # self.tem = bert_config.tem
-        # self.tem = torch.tensor(0.05)
         self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
-        # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
+                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:,0,:]
-        h =  self.shared_encoder(w)
-        if meg=='train':
-            h =  F.normalize(h, p=2, dim=1)
-            sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
-            rev_sent_labels = sent_labels.T
-            rev_h = h.T
-            similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
-            equal_mat = (sent_labels==rev_sent_labels).float()
-            
-            eye = torch.eye(batch_num)
-            a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
-            b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
+        w = hidden[:, 0, :]
+        h = self.shared_encoder(w)
+        
+        if meg == 'train':
+            # Meta-learning adaptation
+            h = F.normalize(h, p=2, dim=1)
 
-            loss = -(torch.log(a/b)).mean(-1)
-            return loss
+            # Inner-loop optimization for domain classification
+            adapted_params = self.dom_cls.weight.clone().detach().requires_grad_(True)
+            task_loss = self.dom_loss1(F.linear(h, adapted_params), dom_labels)
+
+            # Update parameters for the task
+            task_grads = torch.autograd.grad(task_loss, adapted_params, retain_graph=True)
+            adapted_params = adapted_params - 0.01 * task_grads[0]  # Example inner-loop update
+
+            # Compute outer-loop loss
+            meta_loss = self.dom_loss1(F.linear(h, adapted_params.detach()), dom_labels)
+            return meta_loss
 
         elif meg == 'source':
             return F.normalize(h, p=2, dim=1)
