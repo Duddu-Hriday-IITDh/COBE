@@ -86,7 +86,7 @@ class BertCon(BertPreTrainedModel):  # Use BertPreTrainedModel for compatibility
 
         if meg == 'train':
             # Calculate domain classification loss
-            loss = self.dom_loss1(domain_logits)
+            loss = self.dom_loss1(domain_logits, dom_labels)
             return loss
         elif meg == 'source':
             # Return features for the source domain
