@@ -59,13 +59,15 @@ class BertCon(BertPreTrainedModel):
         self.shared_encoder = nn.Sequential(
                         nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
                         nn.ReLU(inplace=True),
+                        nn.Dropout(0.3),
                         nn.Linear(penultimate_hidden_size // 2, 192),
                     )
 
         self.dom_loss1 = CrossEntropyLoss()
         self.dom_cls = nn.Linear(192, bert_config.domain_number)
         # self.tem = bert_config.tem
-        self.tem = torch.tensor(0.05)
+        # self.tem = torch.tensor(0.05)
+        self.tem = nn.Parameter(torch.tensor(0.05, requires_grad=True))
         # self.tem.requires_grad = True
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
