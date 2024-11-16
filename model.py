@@ -126,7 +126,7 @@ class BertCon(BertPreTrainedModel):
         """
         # Example meta-learning loss: Cross-domain classification loss
         dom_preds = self.dom_cls(h)
-        loss = self.dom_loss(dom_preds, dom_labels)
+        loss = self.dom_loss1(dom_preds, dom_labels)
         return loss
     
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
