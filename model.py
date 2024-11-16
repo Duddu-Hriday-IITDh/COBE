@@ -52,7 +52,7 @@ class BertCon(BertPreTrainedModel):
         """
         :param bert_config: configuration for bert model
         """
-        super(BertAutoencoder, self).__init__(bert_config)
+        super(BertCon, self).__init__(bert_config)
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
