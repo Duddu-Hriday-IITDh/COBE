@@ -47,6 +47,57 @@ def get_inverse_sqrt_schedule_with_warmup(optimizer, num_warmup_steps, last_epoc
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
+# class BertCon(BertPreTrainedModel):
+    # def __init__(self, bert_config):
+    #     """
+    #     :param bert_config: configuration for bert model
+    #     """
+    #     super(BertCon, self).__init__(bert_config)
+    #     self.bert_config = bert_config
+    #     self.bert = BertModel(bert_config)
+    #     penultimate_hidden_size = bert_config.hidden_size
+        
+    #     # Shared encoder for feature extraction
+    #     self.shared_encoder = nn.Sequential(
+    #         nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+    #         nn.ReLU(inplace=True),
+    #         nn.Dropout(0.3),
+    #         nn.Linear(penultimate_hidden_size // 2, 192),
+    #     )
+
+    #     # Decoder to reconstruct the original hidden representation
+    #     self.decoder = nn.Sequential(
+    #         nn.Linear(192, penultimate_hidden_size // 2),
+    #         nn.ReLU(inplace=True),
+    #         nn.Dropout(0.3),
+    #         nn.Linear(penultimate_hidden_size // 2, penultimate_hidden_size),
+    #     )
+
+    #     # Reconstruction loss (MSE)
+    #     self.mse_loss = nn.MSELoss()
+
+    # def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
+    #             position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+    #     outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
+    #                         attention_mask=attention_mask, head_mask=head_mask)
+    #     hidden = outputs[0]  # Shape: (batch_size, sequence_length, hidden_size)
+        
+    #     batch_num = hidden.shape[0]
+    #     w = hidden[:, 0, :]  # Taking the representation for the [CLS] token
+    #     h = self.shared_encoder(w)  # Passing through shared encoder
+
+    #     if meg == 'train':
+    #         # Reconstruct the hidden state using the decoder
+    #         reconstructed_h = self.decoder(h)
+            
+    #         # Compute reconstruction loss (MSE)
+    #         loss = self.mse_loss(reconstructed_h, w)  # Loss between original input and reconstruction
+    #         return loss
+
+    #     elif meg == 'source':
+    #         return F.normalize(h, p=2, dim=1)
+
+
 class BertCon(BertPreTrainedModel):
     def __init__(self, bert_config):
         """
@@ -56,93 +107,52 @@ class BertCon(BertPreTrainedModel):
         self.bert_config = bert_config
         self.bert = BertModel(bert_config)
         penultimate_hidden_size = bert_config.hidden_size
-        
-        # Shared encoder for feature extraction
         self.shared_encoder = nn.Sequential(
-            nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(penultimate_hidden_size // 2, 192),
-        )
+                        nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(0.3),
+                        nn.Linear(penultimate_hidden_size // 2, 192),
+                    )
 
-        # Decoder to reconstruct the original hidden representation
-        self.decoder = nn.Sequential(
-            nn.Linear(192, penultimate_hidden_size // 2),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(penultimate_hidden_size // 2, penultimate_hidden_size),
-        )
-
-        # Reconstruction loss (MSE)
-        self.mse_loss = nn.MSELoss()
-
+        self.dom_loss1 = CrossEntropyLoss()
+        self.dom_cls = nn.Linear(192, bert_config.domain_number)
+        # self.tem = bert_config.tem
+        # self.tem = torch.tensor(0.05)
+        self.tem = nn.Parameter(torch.tensor(0.1, requires_grad=True))
+        # self.tem.requires_grad = True
+    def meta_loss(self, h, dom_labels):
+        """
+        Meta-learning loss based on domain-specific labels
+        """
+        # Example meta-learning loss: Cross-domain classification loss
+        dom_preds = self.dom_cls(h)
+        loss = self.dom_loss(dom_preds, dom_labels)
+        return loss
+    
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-                position_ids=None, head_mask=None, dom_labels=None, meg='train'):
+                position_ids=None, head_mask=None, dom_labels = None,meg='train'):
         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
-        hidden = outputs[0]  # Shape: (batch_size, sequence_length, hidden_size)
-        
+        hidden = outputs[0]
         batch_num = hidden.shape[0]
-        w = hidden[:, 0, :]  # Taking the representation for the [CLS] token
-        h = self.shared_encoder(w)  # Passing through shared encoder
-
-        if meg == 'train':
-            # Reconstruct the hidden state using the decoder
-            reconstructed_h = self.decoder(h)
+        w = hidden[:,0,:]
+        h =  self.shared_encoder(w)
+        if meg=='train':
+            h =  F.normalize(h, p=2, dim=1)
+            # sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
+            # rev_sent_labels = sent_labels.T
+            # rev_h = h.T
+            # similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
+            # equal_mat = (sent_labels==rev_sent_labels).float()
             
-            # Compute reconstruction loss (MSE)
-            loss = self.mse_loss(reconstructed_h, w)  # Loss between original input and reconstruction
+            # eye = torch.eye(batch_num)
+            # a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
+            # b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
+
+            # loss = -(torch.log(a/b)).mean(-1)
+            loss = self.meta_loss(h, dom_labels)
+
             return loss
 
         elif meg == 'source':
             return F.normalize(h, p=2, dim=1)
-
-
-# class BertCon(BertPreTrainedModel):
-#     def __init__(self, bert_config):
-#         """
-#         :param bert_config: configuration for bert model
-#         """
-#         super(BertCon, self).__init__(bert_config)
-#         self.bert_config = bert_config
-#         self.bert = BertModel(bert_config)
-#         penultimate_hidden_size = bert_config.hidden_size
-#         self.shared_encoder = nn.Sequential(
-#                         nn.Linear(penultimate_hidden_size, penultimate_hidden_size // 2),
-#                         nn.ReLU(inplace=True),
-#                         nn.Dropout(0.3),
-#                         nn.Linear(penultimate_hidden_size // 2, 192),
-#                     )
-
-#         self.dom_loss1 = CrossEntropyLoss()
-#         self.dom_cls = nn.Linear(192, bert_config.domain_number)
-#         # self.tem = bert_config.tem
-#         # self.tem = torch.tensor(0.05)
-#         self.tem = nn.Parameter(torch.tensor(0.1, requires_grad=True))
-#         # self.tem.requires_grad = True
-
-#     def forward(self, input_ids, token_type_ids=None, attention_mask=None, sent_labels=None,
-#                 position_ids=None, head_mask=None, dom_labels = None,meg='train'):
-#         outputs = self.bert(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
-#                             attention_mask=attention_mask, head_mask=head_mask)
-#         hidden = outputs[0]
-#         batch_num = hidden.shape[0]
-#         w = hidden[:,0,:]
-#         h =  self.shared_encoder(w)
-#         if meg=='train':
-#             h =  F.normalize(h, p=2, dim=1)
-#             sent_labels = sent_labels.unsqueeze(0).repeat(batch_num,1).T
-#             rev_sent_labels = sent_labels.T
-#             rev_h = h.T
-#             similarity_mat = torch.exp(torch.matmul(h,rev_h)/self.tem)
-#             equal_mat = (sent_labels==rev_sent_labels).float()
-            
-#             eye = torch.eye(batch_num)
-#             a = ((equal_mat-eye)*similarity_mat).sum(dim=-1)+1e-5
-#             b = ((torch.ones(batch_num,batch_num)-eye)*similarity_mat).sum(dim=-1)+1e-5
-
-#             loss = -(torch.log(a/b)).mean(-1)
-#             return loss
-
-#         elif meg == 'source':
-#             return F.normalize(h, p=2, dim=1)
