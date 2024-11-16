@@ -99,7 +99,7 @@ class BertCon(BertPreTrainedModel):
         if meg == 'train':
             # Sentiment classification loss
             if sent_labels is not None:
-                print("yes")
+                # print("yes")
                 sent_preds = self.sent_cls(rnn_out)
                 sent_loss = CrossEntropyLoss()(sent_preds, sent_labels)
                 
@@ -112,7 +112,7 @@ class BertCon(BertPreTrainedModel):
                 # return total_loss
                 return sent_loss
             else:
-                print("no")
+                # print("no")
                 return None  # If no labels are provided, return None (no training loss)
         
         elif meg == 'source':
